@@ -3,15 +3,15 @@
 
 int main()
 {
-	/* code */
-    int c;
-
-    c = getchar();
-
+	/* c = getchar();
  	while(c!= EOF){
  		putchar(c);
  		c = getchar();
  	}  
+ 	*/
+    int c;
 
-	return 0;
+    while((c = getchar()) != EOF)
+    	putchar(c);
+    return 0;
 }
