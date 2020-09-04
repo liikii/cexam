@@ -99,6 +99,8 @@ void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame) {
         如果pix_fmt=PIX_FMT_YUV420P
         linesize 的只分别为：352   176  176   0         
         */
+        // 指针的加法
+        // 说你是个指针你就是个指针
         fwrite(pFrame->data[0]+y*pFrame->linesize[0], 1, width*3, pFile);
     }
 
