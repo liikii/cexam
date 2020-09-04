@@ -264,6 +264,19 @@ int main(int argc, char *argv[]) {
     */
     AVPacket packet;
     // initialize SWS context for software scaling
+    // struct SwsContext *sws_getContext(
+    //         int srcW, /* 输入图像的宽度 */
+    //         int srcH, /* 输入图像的宽度 */
+    //         enum AVPixelFormat srcFormat, /* 输入图像的像素格式 */
+    //         int dstW, /* 输出图像的宽度 */
+    //         int dstH, /* 输出图像的高度 */
+    //         enum AVPixelFormat dstFormat,  输出图像的像素格式 
+    //         int flags,/* 选择缩放算法(只有当输入输出图像大小不同时有效),一般选择SWS_FAST_BILINEAR */
+    //         SwsFilter *srcFilter, /* 输入图像的滤波器信息, 若不需要传NULL */
+    //         SwsFilter *dstFilter, /* 输出图像的滤波器信息, 若不需要传NULL */
+    //         const double *param /* 特定缩放算法需要的参数(?)，默认为NULL */
+    //         );
+
     sws_ctx = sws_getContext(pCodecCtx->width,
         pCodecCtx->height,
         pCodecCtx->pix_fmt,
@@ -276,6 +289,88 @@ int main(int argc, char *argv[]) {
         NULL
         );
 
+    
+    i=0;
+    // av_read_frame从字面意思上来看，就是从内存中读取一帧数据，
+    /*
+    av_read_frame::::
+    Return the next frame of a stream. The information is stored as a packet in pkt.
+    The returned packet is valid until the next av_read_frame() or until av_close_input_file() 
+    and must be freed with av_free_packet. For video, the packet contains exactly one frame. 
+    For audio, it contains an integer number of frames if each frame has a known fixed size 
+    (e.g. PCM or ADPCM data). If the audio frames have a variable size (e.g. MPEG audio), then it contains one frame.
+    pkt->pts, pkt->dts and pkt->duration are always set to correct values in AVStream.timebase units 
+    (and guessed if the format cannot provided them). pkt->pts can be AV_NOPTS_VALUE if the video format 
+    has B frames, so it is better to rely on pkt->dts if you do not decompress the payload.
+    Returns: 0 if OK, < 0 if error or end of file.
+    */
+    while(av_read_frame(pFormatCtx, &packet)>=0) {
+          // Is this a packet from the video stream?
+          if(packet.stream_index==videoStream) {
+            // Decode video frame
+            /*
+            int avcodec_decode_video2(AVCodecContext *avctx, AVFrame *picture, int *frameFinished, const AVPacket *avpkt)
+            Decodes a video frame from buf into picture. The avcodec_decode_video2() function decodes a frame of video from the input buffer buf of size buf_size. To decode it, it makes use of the videocodec which was coupled with avctx using avcodec_open2(). The resulting decoded frame is stored in picture.
+            Warning: The sample alignment and buffer problems that apply to avcodec_decode_audio4 apply to this function as well.
+            avctx: The codec context.
+            picture: The AVFrame in which the decoded video will be stored.
+            frameFinished: Zero if no frame could be decompressed, otherwise it is non-zero. avpkt: The input AVPacket containing the input buffer. You can create such packet with av_init_packet() and by then setting data and size, some decoders might in addition need other fields like flags&AV_PKT_FLAG_KEY. All decoders are designed to use the least fields possible.
+            */
+            avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
+                // Did we get a video frame?
+                if(frameFinished) {
+                // Convert the image from its native format to RGB
+                    // FFmpeg中的 sws_scale() 函数主要是用来做视频像素格式和分辨率的转换，其优势在于：可以在同一个函数里实现：
+                    // 1.图像色彩空间转换， 2:分辨率缩放，3:前后图像滤波处理。不足之处在于：效率相对较低，
+                    // 不如libyuv或shader，其关联的函数主要有：
+                    /*
+                    真正用来做转换的函数则是： sws_scale() ，其函数定义如下：
+
+                        int sws_scale(struct SwsContext *c, const uint8_t *const srcSlice[],
+                                      const int srcStride[], int srcSliceY, int srcSliceH,
+                                      uint8_t *const dst[], const int dstStride[]);
+                        下面对其函数参数进行详细说明：
+
+                        1.参数 SwsContext *c， 转换格式的上下文。也就是 sws_getContext 函数返回的结果。
+                        2.参数 const uint8_t *const srcSlice[], 输入图像的每个颜色通道的数据指针。其实就是解码后的AVFrame中的data[]数组。因为不同像素的存储格式不同，所以srcSlice[]维数
+                        也有可能不同。
+                        以YUV420P为例，它是planar格式，它的内存中的排布如下：
+                        YYYYYYYY UUUU VVVV
+                        使用FFmpeg解码后存储在AVFrame的data[]数组中时：
+                        data[0]——-Y分量, Y1, Y2, Y3, Y4, Y5, Y6, Y7, Y8……
+                        data[1]——-U分量, U1, U2, U3, U4……
+                        data[2]——-V分量, V1, V2, V3, V4……
+                        linesize[]数组中保存的是对应通道的数据宽度 ，
+                        linesize[0]——-Y分量的宽度
+                        linesize[1]——-U分量的宽度
+                        linesize[2]——-V分量的宽度
+
+                        而RGB24，它是packed格式，它在data[]数组中则只有一维，它在存储方式如下：
+                        data[0]: R1, G1, B1, R2, G2, B2, R3, G3, B3, R4, G4, B4……
+                        这里要特别注意，linesize[0]的值并不一定等于图片的宽度，有时候为了对齐各解码器的CPU，实际尺寸会大于图片的宽度，这点在我们编程时（比如OpengGL硬件转换/渲染）要特别注意，否则解码出来的图像会异常。
+
+                        3.参数const int srcStride[]，输入图像的每个颜色通道的跨度。.也就是每个通道的行字节数，对应的是解码后的AVFrame中的linesize[]数组。根据它可以确立下一行的起始位置，不过stride和width不一定相同，这是因为：
+                        a.由于数据帧存储的对齐，有可能会向每行后面增加一些填充字节这样 stride = width + N；
+                        b.packet色彩空间下，每个像素几个通道数据混合在一起，例如RGB24，每个像素3字节连续存放，因此下一行的位置需要跳过3*width字节。
+
+                        4.参数int srcSliceY, int srcSliceH,定义在输入图像上处理区域，srcSliceY是起始位置，srcSliceH是处理多少行。如果srcSliceY=0，srcSliceH=height，表示一次性处理完整个图像。这种设置是为了多线程并行，例如可以创建两个线程，第一个线程处理 [0, h/2-1]行，第二个线程处理 [h/2, h-1]行。并行处理加快速度。
+                        5.参数uint8_t *const dst[], const int dstStride[]定义输出图像信息（输出的每个颜色通道数据指针，每个颜色通道行字节数）
+                    */
+                    sws_scale(sws_ctx, (uint8_t const * const *)pFrame->data,
+                      pFrame->linesize, 0, pCodecCtx->height,
+                      pFrameRGB->data, pFrameRGB->linesize);
+                
+                    // Save the frame to disk
+                    if(++i<=5)
+                        printf("----> %d\n", i);
+                      // SaveFrame(pFrameRGB, pCodecCtx->width, 
+                      //           pCodecCtx->height, i);
+                }
+          }
+    
+        // Free the packet that was allocated by av_read_frame
+        av_free_packet(&packet);
+    }
     printf("hello av\n");
 }
 
