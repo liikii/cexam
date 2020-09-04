@@ -1,10 +1,14 @@
 #include <stdio.h>
+
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
 // gcc -o haha haha.c -Wall -lavformat -lavcodec -lswresample -lswscale -lavutil -lm
+// gcc -o tutorial01 tutorial01.c -lavutil -lavformat -lavcodec -lz -lavutil -lm
+// If you have an older version of ffmpeg, you may need to drop -lavutil:
+// gcc -o tutorial01 tutorial01.c -lavformat -lavcodec -lz -lm
 // 
 
 void print_argv(int argc, char *argv[]){
@@ -22,6 +26,84 @@ void print_error(int err_code){
     char errbuf[100];
     av_strerror(err_code, errbuf, sizeof(errbuf));
     printf("error: %s \n", errbuf);
+}
+
+
+void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame) {
+  FILE *pFile;
+  char szFilename[32];
+  int  y;
+  
+  // Open file
+  sprintf(szFilename, "frame%d.ppm", iFrame);
+  pFile=fopen(szFilename, "wb");
+  if(pFile==NULL)
+    return;
+  
+  // Write header
+  fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+  
+  // Write pixel data
+    for (y=0; y<height; y++){
+        // data是一个指针数组，数组的每一个元素是一个指针，指向视频中图像的某一plane或音频中某一声道的plane。
+        /*
+        uint8_t *data[AV_NUM_DATA_POINTERS]：指针数组，存放YUV数据的地方。如图所示，一般占用前3个指针，分别指向Y，U，V数据。
+        对于packed格式的数据（例如RGB24），会存到data[0]里面。
+        对于planar格式的数据（例如YUV420P），则会分开成data[0]，data[1]，data[2]…（YUV420P中data[0]存Y，data[1]存U，data[2]存V）
+        */
+        /*
+        size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
+        参数
+        ptr -- 这是指向要被写入的元素数组的指针。
+        size -- 这是要被写入的每个元素的大小，以字节为单位。
+        nmemb -- 这是元素的个数，每个元素的大小为 size 字节。
+        stream -- 这是指向 FILE 对象的指针，该 FILE 对象指定了一个输出流。
+        
+        AVPicture结构中data和linesize关系
+
+        AVPicture里面有data[4]和linesize[4]其中data是一个指向指针的指针(二级、二维指针)，也就是指向视频数据缓冲区的首地址，而data[0]~data[3]是一级指针，可以用如下的图来表示：
+
+        data -->xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+                    ^                         ^                       ^
+                    |                           |                        |
+                data[0]                data[1]              data[2]
+
+        比如说，当pix_fmt=PIX_FMT_YUV420P时，data中的数据是按照YUV的格式存储的，也就是：
+
+        data -->YYYYYYYYYYYYYYYYYYYYYYYYUUUUUUUUUUUVVVVVVVVVVVV
+                    ^                                        ^                      ^
+                    |                                          |                       |
+               data[0]                                data[1]             data[2]
+
+         
+
+        linesize是指对应于每一行的大小，为什么需要这个变量，是因为在YUV格式和RGB格式时，每行的大小不一定等于图像的宽度。
+
+               linesize = width + padding size(16+16) for YUV
+               linesize = width*pixel_size  for RGB
+        padding is needed during Motion Estimation and Motion Compensation for Optimizing MV serach and  P/B frame reconstruction
+
+         
+
+        for RGB only one channel is available
+        so RGB24 : data[0] = packet rgbrgbrgbrgb......
+                   linesize[0] = width*3
+        data[1],data[2],data[3],linesize[1],linesize[2],linesize[2] have no any means for RGB
+        测试如下：(原始的320×182视频)
+        如果pix_fmt=PIX_FMT_RGBA32
+        linesize 的只分别为：1280  0    0     0
+
+        如果pix_fmt=PIX_FMT_RGB24
+        linesize 的只分别为：960   0    0     0
+
+        如果pix_fmt=PIX_FMT_YUV420P
+        linesize 的只分别为：352   176  176   0         
+        */
+        fwrite(pFrame->data[0]+y*pFrame->linesize[0], 1, width*3, pFile);
+    }
+
+  // Close file
+  fclose(pFile);
 }
 
 
@@ -304,6 +386,17 @@ int main(int argc, char *argv[]) {
     has B frames, so it is better to rely on pkt->dts if you do not decompress the payload.
     Returns: 0 if OK, < 0 if error or end of file.
     */
+
+
+    /*
+    The process, again, is simple: av_read_frame() reads in a packet and stores it in the AVPacket struct. 
+    Note that we've only allocated the packet structure - ffmpeg allocates the internal data for us, 
+    which is pointed to by packet.data. This is freed by the av_free_packet() later. avcodec_decode_video() 
+    converts the packet to a frame for us. However, we might not have all the information we need for a frame after 
+    decoding a packet, so avcodec_decode_video() sets frameFinished for us when we have the next frame. Finally, 
+    we use sws_scale() to convert from the native format (pCodecCtx->pix_fmt) to RGB. Remember that you can cast an 
+    AVFrame pointer to an AVPicture pointer. Finally, we pass the frame and height and width information to our SaveFrame function.
+    */
     while(av_read_frame(pFormatCtx, &packet)>=0) {
           // Is this a packet from the video stream?
           if(packet.stream_index==videoStream) {
@@ -361,17 +454,33 @@ int main(int argc, char *argv[]) {
                       pFrameRGB->data, pFrameRGB->linesize);
                 
                     // Save the frame to disk
-                    if(++i<=5)
+                    if(++i<=5){
                         printf("----> %d\n", i);
-                      // SaveFrame(pFrameRGB, pCodecCtx->width, 
-                      //           pCodecCtx->height, i);
+                        SaveFrame(pFrameRGB, pCodecCtx->width, pCodecCtx->height, i);
+                    }
+                        
                 }
           }
     
         // Free the packet that was allocated by av_read_frame
         av_free_packet(&packet);
     }
+    // Free the RGB image
+    av_free(buffer);
+    av_free(pFrameRGB);
+
+    // Free the YUV frame
+    av_free(pFrame);
+
+    // Close the codecs
+    avcodec_close(pCodecCtx);
+    avcodec_close(pCodecCtxOrig);
+
+    // Close the video file
+    avformat_close_input(&pFormatCtx);
+    
     printf("hello av\n");
+    return 0;
 }
 
 
