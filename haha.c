@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
     // Allocate video frame
     pFrame=av_frame_alloc();
     if(pFrame==NULL){
-        printf("av_frame_alloc error\n", );
+        printf("av_frame_alloc error\n");
         return -1;
     }
 
@@ -149,12 +149,40 @@ int main(int argc, char *argv[]) {
     pFrameRGB=av_frame_alloc();
 
     if(pFrameRGB==NULL){
-        printf("av_frame_alloc error\n", );
+        printf("av_frame_alloc error\n");
         return -1;
     }
 
-    // Even though we've allocated the frame, we still need a place to put the raw data when we convert it. We use avpicture_get_size to get the size we need, and allocate the space manually:
+    /*
+    Even though we've allocated the frame, we still need a place to put the raw data when we convert it. 
+    We use avpicture_get_size to get the size we need, and allocate the space manually:
+    */
+    uint8_t *buffer = NULL;
+    int numBytes;
+    // Determine required buffer size and allocate buffer
+    // Calculates how many bytes will be required for a picture of the given width, height, and pic format.
+    numBytes=avpicture_get_size(PIX_FMT_RGB24, pCodecCtx->width,
+                            pCodecCtx->height);
 
+    // Memory allocation of size byte with alignment suitable for all memory accesses (including vectors if available on the CPU). av_malloc(0) must return a non NULL pointer.
+    // av_malloc is ffmpeg's malloc that is just a simple wrapper around malloc that makes sure the memory addresses are aligned and such. It will not protect you from memory leaks, double freeing, or other malloc problems.
+    buffer=(uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
+
+    // Now we use avpicture_fill to associate the frame with our newly allocated buffer. About the AVPicture cast: the AVPicture struct is a subset of the AVFrame struct - the beginning of the AVFrame struct is identical to the AVPicture struct.
+
+    // Assign appropriate parts of buffer to image planes in pFrameRGB
+    // Note that pFrameRGB is an AVFrame, but AVFrame is a superset
+    // of AVPicture
+    avpicture_fill((AVPicture *)pFrameRGB, buffer, PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+
+
+    // ----------------------------------
+    // Reading the Data
+    // ----------------------------------
+    // struct SwsContext  （software scale） 主要用于视频图像的转换，比如格式转换：
+    // struct SwrContext   （software resample） 主要用于音频重采样，比如采样率转换，声道转换
+    // What we're going to do is read through the entire video stream by reading in the packet, decoding it into our frame, and once our frame is complete, we will convert and save it.
+    
     printf("hello av\n");
 }
 
