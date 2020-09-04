@@ -113,6 +113,10 @@ int main(int argc, char *argv[]) {
     dest should be initialized with avcodec_alloc_context3(NULL), but otherwise uninitialized.
     dest should be initialized with avcodec_alloc_context3(NULL), but otherwise uninitialized.
     */
+    /*
+    Note that we must not use the AVCodecContext from the video stream directly! 
+    So we have to use avcodec_copy_context() to copy the context to a new location (after allocating memory for it, of course).
+    */
     int av_cc_i = avcodec_copy_context(pCodecCtx, pCodecCtxOrig);
     
     if(av_cc_i != 0) {
@@ -121,6 +125,35 @@ int main(int argc, char *argv[]) {
         return -1; // Error copying codec context
     }
 
+    // AVCodecContext *dest, avcodec_copy_context you are required to call avcodec_open2() before you can use this AVCodecContext to decode/encode video/audio data.
+     // Open codec
+    if(avcodec_open2(pCodecCtx, pCodec, NULL)<0){
+        return -1; // Could not open codec
+    }
+
+    // AVFrame中存储的是经过解码后的原始数据。在解码中，AVFrame是解码器的输出；在编码中，AVFrame是编码器的输入。
+    AVFrame *pFrame = NULL;
+
+    // Allocate video frame
+    pFrame=av_frame_alloc();
+    if(pFrame==NULL){
+        printf("av_frame_alloc error\n", );
+        return -1;
+    }
+
+    // Since we're planning to output PPM files, which are stored in 24-bit RGB, 
+    // we're going to have to convert our frame from its native format to RGB. 
+    // ffmpeg will do these conversions for us. For most projects (including ours)
+    // we're going to want to convert our initial frame to a specific format. Let's allocate a frame for the converted frame now.
+    AVFrame *pFrameRGB = NULL;
+    pFrameRGB=av_frame_alloc();
+
+    if(pFrameRGB==NULL){
+        printf("av_frame_alloc error\n", );
+        return -1;
+    }
+
+    // Even though we've allocated the frame, we still need a place to put the raw data when we convert it. We use avpicture_get_size to get the size we need, and allocate the space manually:
 
     printf("hello av\n");
 }
