@@ -5,14 +5,13 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
-// gcc -o haha haha.c -Wall -lavformat -lavcodec -lswresample -lswscale -lavutil -lm
-// gcc -o tutorial01 tutorial01.c -lavutil -lavformat -lavcodec -lz -lavutil -lm
-// If you have an older version of ffmpeg, you may need to drop -lavutil:
-// gcc -o tutorial01 tutorial01.c -lavformat -lavcodec -lz -lm
-// 
+
+#include <SDL.h>
+#include <SDL_thread.h>
+
+// gcc -o haha4 haha4.c -Wall -lavformat -lavcodec -lswresample -lswscale -lavutil -lm `sdl-config --cflags --libs`
 
 void print_argv(int argc, char *argv[]){
-    
     int i;
     printf("%d\n",argc);
     for(i=0;i<argc;i++)
